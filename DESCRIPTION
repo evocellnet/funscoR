@@ -1,0 +1,21 @@
+Package: funscoR
+Type: Package
+Title: Functional score calculation for phosphorylation sites 
+Version: 0.1.0
+Author: David Ochoa <ochoa@ebi.ac.uk>
+Maintainer: David Ochoa <ochoa@ebi.ac.uk>
+Description: Functional score calculation for phosphorylation sites.
+    Given a list of phosphorylation sites, this package annotates them
+    and provides a functional score based on a set of functional features.
+License: LGPL
+Encoding: UTF-8
+LazyData: true
+Imports: 
+    caret,
+    gbm,
+    pROC,
+    doParallel
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
