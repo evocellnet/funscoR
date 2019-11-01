@@ -17,18 +17,39 @@ knitr::opts_chunk$set(
 
 ```{r setup}
 library(funscoR)
+library(kableExtra)
 
 ```
 
 ```{r test}
 
-head(phosphoproteome)
-head(gold)
+phosphoproteome %>%
+  head() %>%
+  kable() %>%
+  kable_styling()
 
-annotated <- annotate_sites(phosphoproteome)
+gold %>%
+  head() %>%
+  kable() %>%
+  kable_styling()
 
+## annotate phosphoproteome with features
+annotated_phos <- annotate_sites(phosphoproteome)
 
-all <- bind_rows(ST, Y) %>%
-    mutate(probabilities = log_scaling(probabilities))
+## preprocess features for training
+ST_features <- preprocess_features(annotated_phos, "ST")
+Y_features <- preprocess_features(annotated_phos, "Y")
+
+## train new model
+## ST_model <- train_funscore(ST_features, "ST", gold, ncores = 4)
+## Y_model <- train_funscore(Y_features, "Y", gold, ncores = 4)
+
+## predict funcscoR for all sites
+ST_scores <- predict_funscore(ST_features, ST_model, ncores = 4)
+Y_scores <- predict_funscore(Y_features, Y_model, ncores = 4)
+
+## gather all predictions
+all_scores <- bind_rows(ST_scores, Y_scores) %>%
+  mutate(probabilities = log_scaling(probabilities))
 
 ```
