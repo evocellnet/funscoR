@@ -48,10 +48,10 @@ Ochoa *et al*. The functional landscape of the human phosphoproteome _bioRxiv_ (
 
 
 # Installation
-First, install `funscoR` from github 
+First, install `funscoR` from github. It requires to have `devtools` installed.
 
 ```{r_github, eval=F}
-devtools::install_github("omarwagih/ggseqlogo")
+devtools::install_github("evocellnet/funscoR")
 ```
 
 # Getting started 
@@ -65,8 +65,6 @@ library(knitr)
 library(dplyr)
 library(stringr)
 ```
-
-# Introduction
 
 # Datasets
 
