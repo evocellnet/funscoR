@@ -1,9 +1,26 @@
+#' Training the phosphosite functional score
+#'
+#' Function to train a phosphosite functional score based on a phosphoproteome and a provided gold standard.
+#'
+#' @param preprocessed_phos data frame of preprocessed features
+#' @param residue residue set to train. Options are "ST" or "Y"
+#' @param gold data frame containing a gold standard set of known functional phosphosites. D
+#' ata frame should contain at least 2 columns: "acc" and "position".
+#' @param parameters list of parameters with training settings
+#' @param seed seed to reproduce the training
+#' @param ncores number of cores to use in parallelized training. Defaults to 1.
+#'
+#' @return object with the trained model
+#'
+#' @import caret dplyr doParallel gbm e1071 pROC parallel foreach
+#' @export
+#'
 train_funscore <- function(preprocessed_phos, residue, gold, parameters = NULL, seed = NULL, ncores = 1) {
     cpu <- list()
     if (is.null(parameters) & residue == "ST") {
         ## Constants
         param <- list()
-        param$outfoldtimes <- 10
+        param$outfoldtimes <- 5
         param$outfoldk <- 3
         param$alogrithm <- "gbm"
         param$n_trees <- 500
@@ -13,7 +30,7 @@ train_funscore <- function(preprocessed_phos, residue, gold, parameters = NULL, 
     } else if (is.null(parameters) & residue == "Y") {
         ## Constants
         param <- list()
-        param$outfoldtimes <- 10
+        param$outfoldtimes <- 5
         param$outfoldk <- 3
         param$alogrithm <- "gbm"
         param$n_trees <- 500
@@ -25,38 +42,49 @@ train_funscore <- function(preprocessed_phos, residue, gold, parameters = NULL, 
         set.seed(seed)
     }
     if (ncores > 1) {
-        mycluster <- makePSOCKcluster(ncores)
-        registerDoParallel(mycluster)
-        cpu$parworker <- getDoParWorkers()
-        cpu$parname <- getDoParName()
-        cpu$parversion <- getDoParVersion()
+        mycluster <- parallel::makePSOCKcluster(ncores)
+        doParallel::registerDoParallel(mycluster)
+        cpu$parworker <- foreach::getDoParWorkers()
+        cpu$parname <- foreach::getDoParName()
+        cpu$parversion <- foreach::getDoParVersion()
     }
     feat <- preprocessed_phos
     goldreg <- gold
     ## Preparing features
     feat <- feat[, !names(feat) == "residue"]
     funclasses <- c("nonfunctional", "functional")
-    feat$is_regulatory <- funclasses[unclass(as.factor(row.names(feat) %in% paste(goldreg$V1, goldreg$V2, sep = "_")))]
+    feat$is_regulatory <- funclasses[unclass(as.factor(row.names(feat) %in% paste(goldreg$acc, goldreg$position, sep = "_")))]
     feat$is_regulatory <- as.factor(feat$is_regulatory)
 
-    folds <- lapply(1:param$outfoldtimes, function(x) createFolds(feat$is_regulatory, k = param$outfoldk, returnTrain = TRUE))
+    folds <- lapply(1:param$outfoldtimes, function(x)
+        createFolds(feat$is_regulatory, k = param$outfoldk, returnTrain = TRUE))
 
-    fit_control <- trainControl(method = "none", classProbs = TRUE, allowParallel = TRUE)
+    fit_control <- trainControl(method = "none",
+                                classProbs = TRUE,
+                                allowParallel = TRUE)
 
-    grid_control <- data.frame(interaction.depth = param$interaction.depth, n.trees = param$n_trees, shrinkage = param$shrinkage,
-        n.minobsinnode = param$n_minobsinnode)
+    grid_control <- data.frame(interaction.depth = param$interaction.depth,
+                               n.trees = param$n_trees,
+                               shrinkage = param$shrinkage,
+                               n.minobsinnode = param$n_minobsinnode)
     time <- system.time({
-        foldmodels <- mclapply(folds, function(iteration) {
-            mclapply(iteration, function(x) {
+        foldmodels <- parallel::mclapply(folds, function(iteration) {
+            parallel::mclapply(iteration, function(x) {
                 train_data <- feat[x, ]
-                model <- train(is_regulatory ~ ., data = train_data, method = param$alogrithm, metric = "ROC", trControl = fit_control,
-                  tuneGrid = grid_control, verbose = FALSE)
+                model <- train(is_regulatory ~ .,
+                               data = train_data,
+                               method = param$alogrithm,
+                               metric = "ROC",
+                               trControl = fit_control,
+                               keep.data=FALSE,
+                               tuneGrid = grid_control,
+                               verbose = FALSE)
                 return(model)
             })
         })
     })
     if (ncores > 1) {
-        stopCluster(mycluster)
+        parallel::stopCluster(mycluster)
     }
     training <- list()
     training$folds <- folds
@@ -66,30 +94,45 @@ train_funscore <- function(preprocessed_phos, residue, gold, parameters = NULL, 
     return(training)
 }
 
-predict_funscore <- function(preprocessed_phos, training, ncores = 1) {
+#' Predict functional score using trained model
+#'
+#' Apply model to predict functional score to a data frame of preprocessed features.
+#'
+#' @param preprocessed_phos preprocessed data frame of features
+#' @param model trained model
+#' @param ncores number of cores for parallelized computation. Defauls to 1.
+#'
+#' @return A data frame of scored phosphosites
+#' @export
+#' @import caret dplyr doParallel gbm e1071 pROC parallel
+predict_funscore <- function(preprocessed_phos, model, ncores = 1) {
     if (ncores > 1) {
-        mycluster <- makePSOCKcluster(ncores)
-        registerDoParallel(mycluster)
+        mycluster <- parallel::makePSOCKcluster(ncores)
+        doParallel::registerDoParallel(mycluster)
     }
 
-    foldmodels <- training$models
+    foldmodels <- model$models
     feat <- preprocessed_phos
-    folds <- training$folds
+    folds <- model$folds
 
-    predictions <- mclapply(seq_len(length(foldmodels)), function(y) {
-        do.call("rbind", mclapply(seq_len(length(foldmodels[[y]])), function(x) {
+    predictions <- parallel::mclapply(seq_len(length(foldmodels)), function(y) {
+        do.call("rbind", parallel::mclapply(seq_len(length(foldmodels[[y]])), function(x) {
             model <- foldmodels[[y]][[x]]
             test_data <- feat[-folds[[y]][[x]], ]
             this_predictions <- predict(model, newdata = test_data, type = "prob")
-            pred_model <- data.frame(sites = row.names(test_data), probabilities = as.vector(this_predictions[, "functional"]))
+            pred_model <- data.frame(sites = row.names(test_data),
+                                     probabilities = as.vector(this_predictions[, "functional"]),
+                                     stringsAsFactors=FALSE)
             return(pred_model)
         }))
     })
     if (ncores > 1) {
-        stopCluster(mycluster)
+        parallel::stopCluster(mycluster)
     }
     ## merge all
-    predictions <- suppressWarnings(Reduce(predictions, function(dtf1, dtf2) full_join(dtf1, dtf2, by = "sites"), .))
-    median_predictions <- data.frame(sites = predictions[, 1], probabilities = apply(predictions[, -1], 1, median))
+    predictions <- predictions %>%
+        Reduce(function(dtf1, dtf2) full_join(dtf1, dtf2, by = "sites"), .)
+    median_predictions <- data.frame(sites = predictions[, 1],
+                                     probabilities = apply(predictions[, -1], 1, median))
     return(median_predictions)
 }
