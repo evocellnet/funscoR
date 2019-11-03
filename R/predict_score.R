@@ -14,7 +14,6 @@
 #'
 #' @import caret dplyr doParallel gbm e1071 pROC parallel foreach
 #' @export
-#'
 train_funscore <- function(preprocessed_phos, residue, gold, parameters = NULL, seed = NULL, ncores = 1) {
     cpu <- list()
     if (is.null(parameters) & residue == "ST") {
@@ -103,8 +102,8 @@ train_funscore <- function(preprocessed_phos, residue, gold, parameters = NULL, 
 #' @param ncores number of cores for parallelized computation. Defauls to 1.
 #'
 #' @return A data frame of scored phosphosites
-#' @export
 #' @import caret dplyr doParallel gbm e1071 pROC parallel
+#' @export
 predict_funscore <- function(preprocessed_phos, model, ncores = 1) {
     if (ncores > 1) {
         mycluster <- parallel::makePSOCKcluster(ncores)

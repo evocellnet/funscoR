@@ -8,9 +8,9 @@
 #' referring to a list of phosphorylation sites
 #'
 #' @return A data frame expanding the input data frame with a list of functional features.
-#' @export
 #'
 #' @importFrom utils data
+#' @export
 annotate_sites <- function(phosphoproteome) {
     feature_list <- grep("feature", data(package = "funscoR")$results[, "Item"], value = TRUE)
     for (feat in feature_list) {
